@@ -339,7 +339,7 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
             sys.exit(1)
 
     if target_date is not None:
-        bulletins = _list_for_date(state, target_date)
+        bulletins = list(reversed(_list_for_date(state, target_date)))
         if not bulletins:
             click.echo("No bulletins stored for that date");
             return
@@ -356,7 +356,7 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
             click.echo(f"  {idx}) {hhmm} — {ep['title']}")
         click.echo("  q) Quit")
         while True:
-            choice = click.prompt("Enter number or 'q' to quit", default=str(len(bulletins)))
+            choice = click.prompt("Enter number or 'q' to quit", default="1")
             if isinstance(choice, str) and choice.lower() == 'q':
                 click.echo("Quitting selection.")
                 return
