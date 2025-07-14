@@ -364,16 +364,26 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
         for idx, ep in enumerate(bulletins, 1):
             hhmm = _dt.datetime.fromisoformat(ep["published"]).strftime("%H:%M")
             click.echo(f"  {idx}) {hhmm} — {ep['title']}")
-        choice = click.prompt("Enter number", type=int, default=len(bulletins))
-        if not 1 <= choice <= len(bulletins):
-            click.echo("Invalid selection");
+        click.echo("  q) Quit")
+        while True:
+            choice = click.prompt("Enter number or 'q' to quit", default=str(len(bulletins)))
+            if isinstance(choice, str) and choice.lower() == 'q':
+                click.echo("Quitting selection.")
+                return
+            try:
+                num_choice = int(choice)
+            except ValueError:
+                click.echo("Invalid selection");
+                continue
+            if not 1 <= num_choice <= len(bulletins):
+                click.echo("Invalid selection");
+                continue
+            selected_ep = bulletins[num_choice - 1]
+            # Ensure latest is cached if it's the latest
+            if selected_ep["url"] == latest["url"]:
+                _ensure_latest_cached(latest)
+            _play_episode(selected_ep, latest)
             return
-        selected_ep = bulletins[choice - 1]
-        # Ensure latest is cached if it's the latest
-        if selected_ep["url"] == latest["url"]:
-            _ensure_latest_cached(latest)
-        _play_episode(selected_ep, latest)
-        return
 
     _ensure_latest_cached(latest)
     _play_local(CACHED_FILE, latest["title"])
