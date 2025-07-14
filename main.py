@@ -35,7 +35,7 @@ FEED_URL = (
     "Wbek5zSqxz0Hk1blo5IBqbd9SCWIfNbT"
 )
 SCRIPT_DIR = Path(__file__).resolve().parent
-STATE_FILE = SCRIPT_DIR / ".bvc5min_state.json"
+STATE_FILE = SCRIPT_DIR / ".bbcli_state.json"
 CACHED_FILE = SCRIPT_DIR / "latest_episode.mp3"
 PCM_RATE = 48_000
 CHANNELS = 2
