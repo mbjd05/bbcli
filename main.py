@@ -355,6 +355,9 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
             return
         if len(bulletins) == 1:
             click.echo(f"Auto‑selecting {bulletins[0]['title']}")
+            # Ensure latest is cached if it's the latest
+            if bulletins[0]["url"] == latest["url"]:
+                _ensure_latest_cached(latest)
             _play_episode(bulletins[0], latest)
             return
         click.echo(f"Bulletins for {target_date.isoformat()} (UTC):")
@@ -365,7 +368,11 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
         if not 1 <= choice <= len(bulletins):
             click.echo("Invalid selection");
             return
-        _play_episode(bulletins[choice - 1], latest)
+        selected_ep = bulletins[choice - 1]
+        # Ensure latest is cached if it's the latest
+        if selected_ep["url"] == latest["url"]:
+            _ensure_latest_cached(latest)
+        _play_episode(selected_ep, latest)
         return
 
     _ensure_latest_cached(latest)
