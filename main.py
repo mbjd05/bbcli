@@ -18,6 +18,12 @@ import click
 import feedparser
 import requests
 import sounddevice as sd
+import rich
+from rich.progress import Progress, BarColumn, TextColumn, ProgressColumn
+from rich.text import Text
+from rich.console import Console
+from rich.table import Table
+from rich.prompt import Prompt
 
 # ---------------------------------------------------------------------------
 # Configuration constants
@@ -121,12 +127,34 @@ class Player:
         self.pause_event = threading.Event()
         self.proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
+        self.console = Console()
+        self.progress = None
+        self.task_id = None
 
     def start(self):
         self._spawn_stream()
         threading.Thread(target=self._ticker, daemon=True).start()
         threading.Thread(target=self._render, daemon=True).start()
         threading.Thread(target=self._controls, daemon=True).start()
+        threading.Thread(target=self._progress_bar, daemon=True).start()
+
+    def _progress_bar(self):
+        if not self.duration or self.duration == float("inf"):
+            return
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeColumn(),
+            console=self.console,
+            transient=True,
+        ) as progress:
+            self.progress = progress
+            self.task_id = progress.add_task("Playing", total=self.duration)
+            while not self.stop_event.is_set():
+                with self._lock:
+                    pos = self.position
+                progress.update(self.task_id, completed=pos)
+                time.sleep(0.2)
 
     def _ticker(self):
         while not self.stop_event.is_set():
@@ -331,8 +359,12 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
     state = _ensure_catalogue_has(latest)
 
     if list_only:
+        table = Table(title="Bulletin Catalogue")
+        table.add_column("Time", style="cyan")
+        table.add_column("Title", style="magenta")
         for ep in state.get("episodes", []):
-            click.echo(f"{_format_published(ep['published'], with_date=True)}  |  {ep['title']}")
+            table.add_row(_format_published(ep['published'], with_date=True), ep['title'])
+        Console().print(table)
         return
 
     target_date: Optional[_dt.date] = None
@@ -347,25 +379,27 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
     if target_date is not None:
         bulletins = list(reversed(_list_for_date(state, target_date)))
         if not bulletins:
-            click.echo("No bulletins stored for that date"); return
+            Console().print("[red]No bulletins stored for that date[/red]"); return
         if len(bulletins) == 1:
-            click.echo(f"Auto‑selecting {_format_published(bulletins[0]['published'])}")
+            Console().print(f"Auto‑selecting {_format_published(bulletins[0]['published'])}")
             if bulletins[0]["url"] == latest["url"]:
                 _ensure_latest_cached(latest)
             _play_episode(bulletins[0], latest)
             return
-        click.echo(f"Bulletins for {target_date.isoformat()} (UTC):")
+        table = Table(title=f"Bulletins for {target_date}", title_justify="left", show_header=True, header_style="bold")
+        table.add_column("#", style="cyan")
+        table.add_column("Time", style="green")
         for idx, ep in enumerate(bulletins, 1):
-            click.echo(f"  {idx}) {_format_published(ep['published'])}")
-        click.echo("  q) Quit")
+            table.add_row(str(idx), _format_published(ep['published']))
+        Console().print(table)
         while True:
-            choice = click.prompt("Enter number or 'q' to quit", default="1")
+            choice = Prompt.ask("Enter number or 'q' to quit", default="1")
             if isinstance(choice, str) and choice.lower() == 'q':
-                click.echo("Quitting selection."); return
+                Console().print("[yellow]Quitting selection.[/yellow]"); return
             try: num_choice = int(choice)
-            except ValueError: click.echo("Invalid selection"); continue
+            except ValueError: Console().print("[red]Invalid selection[/red]"); continue
             if not 1 <= num_choice <= len(bulletins):
-                click.echo("Invalid selection"); continue
+                Console().print("[red]Invalid selection[/red]"); continue
             selected_ep = bulletins[num_choice - 1]
             if selected_ep["url"] == latest["url"]:
                 _ensure_latest_cached(latest)
@@ -375,6 +409,12 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
     _ensure_latest_cached(latest)
     _play_local(CACHED_FILE, latest["published"])
 
+
+class TimeColumn(ProgressColumn):
+    def render(self, task):
+        elapsed = int(task.completed)
+        total = int(task.total)
+        return Text(f"{elapsed//60:02}:{elapsed%60:02}/{total//60:02}:{total%60:02}")
 
 if __name__ == "__main__":
     cli()
