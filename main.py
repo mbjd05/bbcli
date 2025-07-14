@@ -176,7 +176,6 @@ class Player:
                     progress.update(self.task_id, description="Playing")
                     finished = False
                 time.sleep(0.2)
-            self.console.print("[dim]Controls: a/← -10s, d/→ +10s, space pause/play, q quit[/dim]")
 
     def _ticker(self):
         while not self.stop_event.is_set():
