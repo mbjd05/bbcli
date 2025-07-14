@@ -20,8 +20,25 @@
       "url": "https://open.live.bbc.co.uk/mediaselector/6/redir/version/2.0/mediaset/audio-nondrm-download/proto/https/vpid/w1msl7hkbcq8h5l.mp3",
       "published": "2025-07-14T17:06:00+00:00",
       "duration": 300
+    },
+    {
+      "guid": "urn:bbc:podcast:w172zwwq2jmzq14",
+      "title": "14/07/2025 19:01 GMT",
+      "url": "https://open.live.bbc.co.uk/mediaselector/6/redir/version/2.0/mediaset/audio-nondrm-download/proto/https/vpid/w1msl7hkbcq8qnv.mp3",
+      "published": "2025-07-14T19:06:00+00:00",
+      "duration": 300
+    },
+    {
+      "guid": "urn:bbc:podcast:w172zwwq2jmzts8",
+      "title": "14/07/2025 20:01 GMT",
+      "url": "https://open.live.bbc.co.uk/mediaselector/6/redir/version/2.0/mediaset/audio-nondrm-download/proto/https/vpid/w1msl7hkbcq8vdz.mp3",
+      "published": "2025-07-14T20:06:00+00:00",
+      "duration": 300
     }
   ],
-  "latest_guid": "urn:bbc:podcast:w172zwwq2jmzgjw",
-  "latest_published": "2025-07-14T17:06:00+00:00"
+  "latest_guid": "urn:bbc:podcast:w172zwwq2jmzts8",
+  "latest_published": "2025-07-14T20:06:00+00:00",
+  "finished": {
+    "urn:bbc:podcast:w172zwwq2jmzts8": true
+  }
 }

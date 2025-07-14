@@ -363,7 +363,7 @@ def _format_published(dt_str: str, with_date: bool = False, with_title: Optional
     return base
 
 
-def _play_local(path: Path, published: str, delete_after: bool = False):
+def _play_local(path: Path, published: str, delete_after: bool = False, guid: str = None):
     player = Player(path, _duration(path))
     click.echo(f"Starting playback → {_format_published(published, with_date=True)}")
     player.start()
@@ -375,19 +375,32 @@ def _play_local(path: Path, published: str, delete_after: bool = False):
     if delete_after:
         try: path.unlink()
         except FileNotFoundError: pass
+    # Mark as finished if played to end
+    if guid and player.position >= player.duration - 1:
+        _mark_episode_finished(guid)
 
 
 def _play_episode(ep: dict, latest: dict):
     """Play *ep*: reuse cached file if it is the latest; otherwise temp‑download."""
     if ep["guid"] == latest["guid"] and CACHED_FILE.exists():
-        _play_local(CACHED_FILE, ep["published"])
+        _play_local(CACHED_FILE, ep["published"], guid=ep["guid"])
         return
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3", dir=SCRIPT_DIR) as tmp:
         temp_path = Path(tmp.name)
     click.echo("Downloading bulletin for local seek …")
     _download(ep["url"], temp_path)
-    _play_local(temp_path, ep["published"], delete_after=True)
+    _play_local(temp_path, ep["published"], delete_after=True, guid=ep["guid"])
 
+def _mark_episode_finished(guid: str):
+    state = _load_state()
+    finished = state.get("finished", {})
+    finished[guid] = True
+    state["finished"] = finished
+    _save_state(state)
+
+def _is_episode_finished(guid: str) -> bool:
+    state = _load_state()
+    return state.get("finished", {}).get(guid, False)
 
 def _ensure_latest_cached(latest: dict):
     state = _load_state()
@@ -491,8 +504,14 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
             _play_episode(selected_ep, latest)
             return
 
+    # --- New logic for finished episode check ---
+    if _is_episode_finished(latest["guid"]):
+        ans = Prompt.ask("You have already finished listening to the latest available episode. Play again? (y/n)", default="n")
+        if ans.strip().lower() != "y":
+            click.echo("Exiting.")
+            return
     _ensure_latest_cached(latest)
-    _play_local(CACHED_FILE, latest["published"])
+    _play_local(CACHED_FILE, latest["published"], guid=latest["guid"])
 
 
 class TimeColumn(ProgressColumn):
