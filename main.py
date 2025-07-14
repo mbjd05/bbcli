@@ -24,9 +24,12 @@ from rich.console import Console
 from rich.table import Table
 from rich.prompt import Prompt
 
+
 # ---------------------------------------------------------------------------
 # Configuration constants
 # ---------------------------------------------------------------------------
+
+
 FEED_URL = (
     "https://podcast.voice.api.bbci.co.uk/rss/audio/p002vsmz?api_key="
     "Wbek5zSqxz0Hk1blo5IBqbd9SCWIfNbT"
@@ -37,6 +40,7 @@ CACHED_FILE = SCRIPT_DIR / "latest_episode.mp3"
 PCM_RATE = 48_000
 CHANNELS = 2
 _CUR_UTC = _dt.datetime.now(_dt.timezone.utc)
+
 
 # ---------------------------------------------------------------------------
 # State helpers
@@ -153,6 +157,8 @@ def _duration(src: str | Path):
 # ---------------------------------------------------------------------------
 # Audio Player (unchanged)
 # ---------------------------------------------------------------------------
+
+
 class Player:
     def __init__(self, source: str | Path, duration: float | None):
         self.source = str(source)
@@ -451,6 +457,8 @@ def _ensure_latest_cached(latest: dict):
 # ---------------------------------------------------------------------------
 # Date parsing helpers
 # ---------------------------------------------------------------------------
+
+
 _DATE_PATTERNS = [
     (re.compile(r"^(\d{1,2})-(\d{1,2})$"), "%d-%m"),  # DD-MM (current year)
     (re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{2})$"), "%d-%m-%y"),  # DD-MM-YY
@@ -476,6 +484,8 @@ def _parse_cli_date(text: str) -> Optional[_dt.date]:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
+
 @click.command(context_settings=dict(help_option_names=["-h", "--help"]))
 @click.option(
     "--date", "date_text", type=str, help="DATE in DD‑MM, DD‑MM‑YY, or YYYY‑MM‑DD (UTC)"
