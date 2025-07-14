@@ -1,13 +1,3 @@
-#!/usr/bin/env python3
-"""BBC 5‑Minute Bulletin grabber & player — catalogue, chooser, temp‑seek.
-
-Patch – *avoid re‑downloading latest when chosen from list* + *file end fixed*
-============================================================================
-If the user selects the bulletin that is already cached in **latest_episode.mp3**
-(the most‑recent one), the script now re‑uses that file instead of fetching it
-again.  Only older items are downloaded to a temporary file.  The `if __name__`
-block is restored so the script is runnable.
-"""
 from __future__ import annotations
 
 import datetime as _dt
