@@ -250,9 +250,17 @@ def _list_for_date(state: dict, day: _dt.date) -> List[dict]:
 # Playback helpers
 # ---------------------------------------------------------------------------
 
-def _play_local(path: Path, title: str, delete_after: bool = False):
+def _format_published(dt_str: str, with_date: bool = False, with_title: Optional[str] = None) -> str:
+    dt = _dt.datetime.fromisoformat(dt_str)
+    base = dt.strftime("%H:%M %d/%m/%Y" if with_date else "%H:%M")
+    if with_title:
+        return f"{base} — {with_title}"
+    return base
+
+
+def _play_local(path: Path, published: str, delete_after: bool = False):
     player = Player(path, _duration(path))
-    click.echo(f"Starting playback → {title}")
+    click.echo(f"Starting playback → {_format_published(published, with_date=True)}")
     player.start()
     try:
         while not player.stop_event.is_set():
@@ -260,22 +268,20 @@ def _play_local(path: Path, title: str, delete_after: bool = False):
     except KeyboardInterrupt:
         player.stop_event.set()
     if delete_after:
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
+        try: path.unlink()
+        except FileNotFoundError: pass
 
 
 def _play_episode(ep: dict, latest: dict):
     """Play *ep*: reuse cached file if it is the latest; otherwise temp‑download."""
     if ep["url"] == latest["url"] and CACHED_FILE.exists():
-        _play_local(CACHED_FILE, ep["title"])
+        _play_local(CACHED_FILE, ep["published"])
         return
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3", dir=SCRIPT_DIR) as tmp:
         temp_path = Path(tmp.name)
     click.echo("Downloading bulletin for local seek …")
     _download(ep["url"], temp_path)
-    _play_local(temp_path, ep["title"], delete_after=True)
+    _play_local(temp_path, ep["published"], delete_after=True)
 
 
 def _ensure_latest_cached(latest: dict):
@@ -326,7 +332,7 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
 
     if list_only:
         for ep in state.get("episodes", []):
-            click.echo(f"{ep['published']}  |  {ep['title']}")
+            click.echo(f"{_format_published(ep['published'], with_date=True)}  |  {ep['title']}")
         return
 
     target_date: Optional[_dt.date] = None
@@ -341,42 +347,33 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
     if target_date is not None:
         bulletins = list(reversed(_list_for_date(state, target_date)))
         if not bulletins:
-            click.echo("No bulletins stored for that date");
-            return
+            click.echo("No bulletins stored for that date"); return
         if len(bulletins) == 1:
-            click.echo(f"Auto‑selecting {bulletins[0]['title']}")
-            # Ensure latest is cached if it's the latest
+            click.echo(f"Auto‑selecting {_format_published(bulletins[0]['published'])}")
             if bulletins[0]["url"] == latest["url"]:
                 _ensure_latest_cached(latest)
             _play_episode(bulletins[0], latest)
             return
         click.echo(f"Bulletins for {target_date.isoformat()} (UTC):")
         for idx, ep in enumerate(bulletins, 1):
-            hhmm = _dt.datetime.fromisoformat(ep["published"]).strftime("%H:%M")
-            click.echo(f"  {idx}) {hhmm} — {ep['title']}")
+            click.echo(f"  {idx}) {_format_published(ep['published'])}")
         click.echo("  q) Quit")
         while True:
             choice = click.prompt("Enter number or 'q' to quit", default="1")
             if isinstance(choice, str) and choice.lower() == 'q':
-                click.echo("Quitting selection.")
-                return
-            try:
-                num_choice = int(choice)
-            except ValueError:
-                click.echo("Invalid selection");
-                continue
+                click.echo("Quitting selection."); return
+            try: num_choice = int(choice)
+            except ValueError: click.echo("Invalid selection"); continue
             if not 1 <= num_choice <= len(bulletins):
-                click.echo("Invalid selection");
-                continue
+                click.echo("Invalid selection"); continue
             selected_ep = bulletins[num_choice - 1]
-            # Ensure latest is cached if it's the latest
             if selected_ep["url"] == latest["url"]:
                 _ensure_latest_cached(latest)
             _play_episode(selected_ep, latest)
             return
 
     _ensure_latest_cached(latest)
-    _play_local(CACHED_FILE, latest["title"])
+    _play_local(CACHED_FILE, latest["published"])
 
 
 if __name__ == "__main__":
