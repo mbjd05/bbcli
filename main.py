@@ -151,19 +151,32 @@ class Player:
             self.progress = progress
             self.task_id = progress.add_task("Playing", total=self.duration)
             finished = False
+            paused = False
+            self.console.print("[dim]Controls: a/← -10s, d/→ +10s, space pause/play, q quit[/dim]")
             while not self.stop_event.is_set():
                 with self._lock:
                     pos = self.position
                 progress.update(self.task_id, completed=pos)
-                # If not finished and at end, set to Finished
-                if not finished and pos >= self.duration:
+                # Status logic
+                if self.pause_event.is_set():
+                    if not paused:
+                        progress.update(self.task_id, description="Paused")
+                        paused = True
+                elif paused:
+                    # Resume from paused
+                    if pos >= self.duration:
+                        progress.update(self.task_id, description="Finished")
+                    else:
+                        progress.update(self.task_id, description="Playing")
+                    paused = False
+                if not finished and pos >= self.duration and not self.pause_event.is_set():
                     progress.update(self.task_id, description="Finished")
                     finished = True
-                # If finished and user seeks back, set to Playing
-                elif finished and pos < self.duration:
+                elif finished and pos < self.duration and not self.pause_event.is_set():
                     progress.update(self.task_id, description="Playing")
                     finished = False
                 time.sleep(0.2)
+            self.console.print("[dim]Controls: a/← -10s, d/→ +10s, space pause/play, q quit[/dim]")
 
     def _ticker(self):
         while not self.stop_event.is_set():
@@ -232,7 +245,6 @@ class Player:
                 out.write(chunk)
 
     def _controls(self):
-        click.echo("Controls: a -10s, d +10s, space pause/play, q quit")
         if os.name == "nt":
             import msvcrt
         else:
@@ -243,6 +255,13 @@ class Player:
                     time.sleep(0.1)
                     continue
                 ch = msvcrt.getwch()
+                # Handle arrow keys on Windows
+                if ch == '\xe0':
+                    arrow = msvcrt.getwch()
+                    if arrow == 'K':  # Left arrow
+                        ch = 'LEFT'
+                    elif arrow == 'M':  # Right arrow
+                        ch = 'RIGHT'
             else:
                 fd = sys.stdin.fileno()
                 old = termios.tcgetattr(fd)
@@ -250,6 +269,14 @@ class Player:
                 try:
                     if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
                         ch = sys.stdin.read(1)
+                        if ch == '\x1b':  # Escape sequence
+                            next1 = sys.stdin.read(1)
+                            if next1 == '[':
+                                next2 = sys.stdin.read(1)
+                                if next2 == 'D':
+                                    ch = 'LEFT'
+                                elif next2 == 'C':
+                                    ch = 'RIGHT'
                     else:
                         time.sleep(0.1)
                         continue
@@ -262,11 +289,11 @@ class Player:
                     self.pause_event.clear()
                 else:
                     self.pause_event.set()
-            if ch.lower() == "a":
+            if ch.lower() == "a" or ch == 'LEFT':
                 with self._lock:
                     self.position = max(self.position - 10.0, 0.0)
                 self._spawn_stream()
-            if ch.lower() == "d":
+            if ch.lower() == "d" or ch == 'RIGHT':
                 with self._lock:
                     self.position = min(self.position + 10.0, self.duration)
                 self._spawn_stream()
