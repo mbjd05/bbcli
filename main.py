@@ -164,9 +164,13 @@ class Player:
                     self.position = min(self.position + 1, self.duration)
 
     def _spawn_stream(self):
-        self.pcm_q = queue.Queue()
+        # Terminate old process and clear PCM queue before respawning
         if self.proc:
             self.proc.terminate()
+            self.proc = None
+        while not self.pcm_q.empty():
+            try: self.pcm_q.get_nowait()
+            except queue.Empty: break
         with self._lock:
             start = max(0.0, min(self.position, self.duration))
         cmd = [
@@ -187,23 +191,33 @@ class Player:
             str(PCM_RATE),
             "pipe:1",
         ]
-        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-        threading.Thread(target=self._feed_queue, daemon=True).start()
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+        self.proc = proc
+        # Only one feed_queue thread at a time: pass proc handle, only current proc can write to queue
+        threading.Thread(target=self._feed_queue, args=(proc,), daemon=True).start()
 
-    def _feed_queue(self):
-        while not self.stop_event.is_set() and self.proc:
-            data = self.proc.stdout.read(4096)
+    def _feed_queue(self, proc):
+        while not self.stop_event.is_set() and proc.poll() is None:
+            data = proc.stdout.read(4096)
             if not data:
                 break
-            self.pcm_q.put(data)
-        self.pcm_q.put(None)
+            # Only write to queue if this is the current process
+            if proc is self.proc:
+                self.pcm_q.put(data)
+        # Only the current process puts the sentinel
+        if proc is self.proc:
+            self.pcm_q.put(None)
 
     def _render(self):
         with sd.RawOutputStream(samplerate=PCM_RATE, channels=CHANNELS, dtype="int16") as out:
             while not self.stop_event.is_set():
                 chunk = self.pcm_q.get()
                 if chunk is None:
-                    break
+                    # If not stopped, wait for new data (e.g., after seek)
+                    if not self.stop_event.is_set():
+                        continue
+                    else:
+                        break
                 while self.pause_event.is_set() and not self.stop_event.is_set():
                     time.sleep(0.1)
                 out.write(chunk)
