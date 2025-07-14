@@ -150,10 +150,19 @@ class Player:
         ) as progress:
             self.progress = progress
             self.task_id = progress.add_task("Playing", total=self.duration)
+            finished = False
             while not self.stop_event.is_set():
                 with self._lock:
                     pos = self.position
                 progress.update(self.task_id, completed=pos)
+                # If not finished and at end, set to Finished
+                if not finished and pos >= self.duration:
+                    progress.update(self.task_id, description="Finished")
+                    finished = True
+                # If finished and user seeks back, set to Playing
+                elif finished and pos < self.duration:
+                    progress.update(self.task_id, description="Playing")
+                    finished = False
                 time.sleep(0.2)
 
     def _ticker(self):
@@ -428,7 +437,7 @@ class TimeColumn(ProgressColumn):
     def render(self, task):
         elapsed = int(task.completed)
         total = int(task.total)
-        return Text(f"{elapsed//60:02}:{elapsed%60:02}/{total//60:02}:{total%60:02}")
+        return Text.from_markup(f"[cyan]{elapsed//60:02}:{elapsed%60:02}[/cyan]/[magenta]{total//60:02}:{total%60:02}[/magenta]")
 
 if __name__ == "__main__":
     cli()
