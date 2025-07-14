@@ -63,14 +63,42 @@ def _save_state(state: dict) -> None:
 # Feed interaction
 # ---------------------------------------------------------------------------
 
+def _parse_duration(dur):
+    if dur is None:
+        return None
+    if isinstance(dur, int):
+        return dur
+    if isinstance(dur, str):
+        parts = dur.strip().split(":")
+        try:
+            if len(parts) == 3:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+            elif len(parts) == 2:
+                return int(parts[0]) * 60 + int(parts[1])
+            elif len(parts) == 1:
+                return int(parts[0])
+        except Exception:
+            return None
+    return None
+
 def _parse_entry(entry) -> dict:
     title = entry.title
-    url = entry.enclosures[0].href
+    url   = entry.enclosures[0].href
+    guid  = getattr(entry, "id", getattr(entry, "guid", entry.link))
     if getattr(entry, "published_parsed", None):
         ts = _dt.datetime(*entry.published_parsed[:6], tzinfo=_dt.timezone.utc)
     else:
         ts = _CUR_UTC
-    return {"title": title, "url": url, "published": ts.isoformat()}
+    dur = None
+    if getattr(entry, "itunes_duration", None):
+        dur = _parse_duration(entry.itunes_duration)
+    return {
+        "guid": guid,          # NEW
+        "title": title,
+        "url": url,
+        "published": ts.isoformat(),
+        "duration": dur,       # NEW
+    }
 
 
 def _fetch_latest_episode() -> dict:
@@ -309,8 +337,8 @@ def _ensure_catalogue_has(latest: dict) -> dict:
         eps.sort(key=lambda e: e["published"])
         state.update(
             episodes=eps,
-            latest_title=latest["title"],
-            latest_url=latest["url"],
+            latest_guid=latest["guid"],
+            latest_published=latest["published"],
         )
         _save_state(state)
     return state
@@ -351,7 +379,7 @@ def _play_local(path: Path, published: str, delete_after: bool = False):
 
 def _play_episode(ep: dict, latest: dict):
     """Play *ep*: reuse cached file if it is the latest; otherwise temp‑download."""
-    if ep["url"] == latest["url"] and CACHED_FILE.exists():
+    if ep["guid"] == latest["guid"] and CACHED_FILE.exists():
         _play_local(CACHED_FILE, ep["published"])
         return
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3", dir=SCRIPT_DIR) as tmp:
@@ -362,9 +390,17 @@ def _play_episode(ep: dict, latest: dict):
 
 
 def _ensure_latest_cached(latest: dict):
-    if not CACHED_FILE.exists() or _load_state().get("latest_url") != latest["url"]:
+    state = _load_state()
+    need = True
+    if CACHED_FILE.exists() and state.get("latest_guid") == latest["guid"]:
+        if latest.get("duration") and abs((_duration(CACHED_FILE) or 0) - latest["duration"]) < 2:
+            need = False
+    if need:
         click.echo("Downloading newest episode …")
         _download(latest["url"], CACHED_FILE)
+        state["latest_guid"] = latest["guid"]
+        state["latest_published"] = latest["published"]
+        _save_state(state)
     else:
         click.echo("Using cached episode file.")
 
