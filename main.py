@@ -18,7 +18,6 @@ import click
 import feedparser
 import requests
 import sounddevice as sd
-import rich
 from rich.progress import Progress, BarColumn, TextColumn, ProgressColumn
 from rich.text import Text
 from rich.console import Console
@@ -34,7 +33,7 @@ FEED_URL = (
 )
 SCRIPT_DIR = Path(__file__).resolve().parent
 STATE_FILE = SCRIPT_DIR / ".bvc5min_state.json"
-CACHED_FILE = SCRIPT_DIR / "latest_episode.mp3"  # permanent cache (latest only)
+CACHED_FILE = SCRIPT_DIR / "latest_episode.mp3"
 PCM_RATE = 48_000
 CHANNELS = 2
 _CUR_UTC = _dt.datetime.now(_dt.timezone.utc)
@@ -42,6 +41,7 @@ _CUR_UTC = _dt.datetime.now(_dt.timezone.utc)
 # ---------------------------------------------------------------------------
 # State helpers
 # ---------------------------------------------------------------------------
+
 
 def _load_state() -> dict:
     try:
@@ -59,9 +59,11 @@ def _save_state(state: dict) -> None:
     except PermissionError as e:
         click.echo(f"Error writing state file: {e}", err=True)
 
+
 # ---------------------------------------------------------------------------
 # Feed interaction
 # ---------------------------------------------------------------------------
+
 
 def _parse_duration(dur):
     if dur is None:
@@ -81,10 +83,11 @@ def _parse_duration(dur):
             return None
     return None
 
+
 def _parse_entry(entry) -> dict:
     title = entry.title
-    url   = entry.enclosures[0].href
-    guid  = getattr(entry, "id", getattr(entry, "guid", entry.link))
+    url = entry.enclosures[0].href
+    guid = getattr(entry, "id", getattr(entry, "guid", entry.link))
     if getattr(entry, "published_parsed", None):
         ts = _dt.datetime(*entry.published_parsed[:6], tzinfo=_dt.timezone.utc)
     else:
@@ -93,11 +96,11 @@ def _parse_entry(entry) -> dict:
     if getattr(entry, "itunes_duration", None):
         dur = _parse_duration(entry.itunes_duration)
     return {
-        "guid": guid,          # NEW
+        "guid": guid,
         "title": title,
         "url": url,
         "published": ts.isoformat(),
-        "duration": dur,       # NEW
+        "duration": dur,
     }
 
 
@@ -108,9 +111,11 @@ def _fetch_latest_episode() -> dict:
         sys.exit(1)
     return _parse_entry(feed.entries[0])
 
+
 # ---------------------------------------------------------------------------
 # Download helpers
 # ---------------------------------------------------------------------------
+
 
 def _download(url: str, dest: Path) -> None:
     resp = requests.get(url, stream=True, timeout=30)
@@ -119,9 +124,11 @@ def _download(url: str, dest: Path) -> None:
         for chunk in resp.iter_content(1024 * 64):
             f.write(chunk)
 
+
 # ---------------------------------------------------------------------------
 # FFprobe duration helper
 # ---------------------------------------------------------------------------
+
 
 def _duration(src: str | Path):
     cmd = [
@@ -141,6 +148,7 @@ def _duration(src: str | Path):
         return float(res.stdout.strip())
     except ValueError:
         return None
+
 
 # ---------------------------------------------------------------------------
 # Audio Player (unchanged)
@@ -180,24 +188,28 @@ class Player:
             self.task_id = progress.add_task("Playing", total=self.duration)
             finished = False
             paused = False
-            self.console.print("[dim]Controls: a/← -10s, d/→ +10s, space pause/play, q quit[/dim]")
+            self.console.print(
+                "[dim]Controls: a/← -10s, d/→ +10s, space pause/play, q quit[/dim]"
+            )
             while not self.stop_event.is_set():
                 with self._lock:
                     pos = self.position
                 progress.update(self.task_id, completed=pos)
-                # Status logic
                 if self.pause_event.is_set():
                     if not paused:
                         progress.update(self.task_id, description="Paused")
                         paused = True
                 elif paused:
-                    # Resume from paused
                     if pos >= self.duration:
                         progress.update(self.task_id, description="Finished")
                     else:
                         progress.update(self.task_id, description="Playing")
                     paused = False
-                if not finished and pos >= self.duration and not self.pause_event.is_set():
+                if (
+                    not finished
+                    and pos >= self.duration
+                    and not self.pause_event.is_set()
+                ):
                     progress.update(self.task_id, description="Finished")
                     finished = True
                 elif finished and pos < self.duration and not self.pause_event.is_set():
@@ -213,13 +225,14 @@ class Player:
                     self.position = min(self.position + 1, self.duration)
 
     def _spawn_stream(self):
-        # Terminate old process and clear PCM queue before respawning
         if self.proc:
             self.proc.terminate()
             self.proc = None
         while not self.pcm_q.empty():
-            try: self.pcm_q.get_nowait()
-            except queue.Empty: break
+            try:
+                self.pcm_q.get_nowait()
+            except queue.Empty:
+                break
         with self._lock:
             start = max(0.0, min(self.position, self.duration))
         cmd = [
@@ -242,7 +255,6 @@ class Player:
         ]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
         self.proc = proc
-        # Only one feed_queue thread at a time: pass proc handle, only current proc can write to queue
         threading.Thread(target=self._feed_queue, args=(proc,), daemon=True).start()
 
     def _feed_queue(self, proc):
@@ -250,19 +262,18 @@ class Player:
             data = proc.stdout.read(4096)
             if not data:
                 break
-            # Only write to queue if this is the current process
             if proc is self.proc:
                 self.pcm_q.put(data)
-        # Only the current process puts the sentinel
         if proc is self.proc:
             self.pcm_q.put(None)
 
     def _render(self):
-        with sd.RawOutputStream(samplerate=PCM_RATE, channels=CHANNELS, dtype="int16") as out:
+        with sd.RawOutputStream(
+            samplerate=PCM_RATE, channels=CHANNELS, dtype="int16"
+        ) as out:
             while not self.stop_event.is_set():
                 chunk = self.pcm_q.get()
                 if chunk is None:
-                    # If not stopped, wait for new data (e.g., after seek)
                     if not self.stop_event.is_set():
                         continue
                     else:
@@ -275,20 +286,20 @@ class Player:
         if os.name == "nt":
             import msvcrt
         else:
-            import termios, tty
+            import termios
+            import tty
         while not self.stop_event.is_set():
             if os.name == "nt":
                 if not msvcrt.kbhit():
                     time.sleep(0.1)
                     continue
                 ch = msvcrt.getwch()
-                # Handle arrow keys on Windows
-                if ch == '\xe0':
+                if ch == "\xe0":
                     arrow = msvcrt.getwch()
-                    if arrow == 'K':  # Left arrow
-                        ch = 'LEFT'
-                    elif arrow == 'M':  # Right arrow
-                        ch = 'RIGHT'
+                    if arrow == "K":
+                        ch = "LEFT"
+                    elif arrow == "M":
+                        ch = "RIGHT"
             else:
                 fd = sys.stdin.fileno()
                 old = termios.tcgetattr(fd)
@@ -296,38 +307,41 @@ class Player:
                 try:
                     if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
                         ch = sys.stdin.read(1)
-                        if ch == '\x1b':  # Escape sequence
+                        if ch == "\x1b":
                             next1 = sys.stdin.read(1)
-                            if next1 == '[':
+                            if next1 == "[":
                                 next2 = sys.stdin.read(1)
-                                if next2 == 'D':
-                                    ch = 'LEFT'
-                                elif next2 == 'C':
-                                    ch = 'RIGHT'
+                                if next2 == "D":
+                                    ch = "LEFT"
+                                elif next2 == "C":
+                                    ch = "RIGHT"
                     else:
                         time.sleep(0.1)
                         continue
                 finally:
                     termios.tcsetattr(fd, termios.TCSADRAIN, old)
             if ch.lower() == "q":
-                self.stop_event.set(); return
+                self.stop_event.set()
+                return
             if ch == " ":
                 if self.pause_event.is_set():
                     self.pause_event.clear()
                 else:
                     self.pause_event.set()
-            if ch.lower() == "a" or ch == 'LEFT':
+            if ch.lower() == "a" or ch == "LEFT":
                 with self._lock:
                     self.position = max(self.position - 10.0, 0.0)
                 self._spawn_stream()
-            if ch.lower() == "d" or ch == 'RIGHT':
+            if ch.lower() == "d" or ch == "RIGHT":
                 with self._lock:
                     self.position = min(self.position + 10.0, self.duration)
                 self._spawn_stream()
 
+
 # ---------------------------------------------------------------------------
 # Catalogue helpers
 # ---------------------------------------------------------------------------
+
 
 def _ensure_catalogue_has(latest: dict) -> dict:
     state = _load_state()
@@ -351,11 +365,15 @@ def _list_for_date(state: dict, day: _dt.date) -> List[dict]:
         if _dt.datetime.fromisoformat(ep["published"]).date() == day
     ]
 
+
 # ---------------------------------------------------------------------------
 # Playback helpers
 # ---------------------------------------------------------------------------
 
-def _format_published(dt_str: str, with_date: bool = False, with_title: Optional[str] = None) -> str:
+
+def _format_published(
+    dt_str: str, with_date: bool = False, with_title: Optional[str] = None
+) -> str:
     dt = _dt.datetime.fromisoformat(dt_str)
     base = dt.strftime("%H:%M %d/%m/%Y" if with_date else "%H:%M")
     if with_title:
@@ -363,7 +381,9 @@ def _format_published(dt_str: str, with_date: bool = False, with_title: Optional
     return base
 
 
-def _play_local(path: Path, published: str, delete_after: bool = False, guid: str = None):
+def _play_local(
+    path: Path, published: str, delete_after: bool = False, guid: str = None
+):
     player = Player(path, _duration(path))
     click.echo(f"Starting playback → {_format_published(published, with_date=True)}")
     player.start()
@@ -373,9 +393,11 @@ def _play_local(path: Path, published: str, delete_after: bool = False, guid: st
     except KeyboardInterrupt:
         player.stop_event.set()
     if delete_after:
-        try: path.unlink()
-        except FileNotFoundError: pass
-    # Mark as finished if played to end
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
     if guid and player.position >= player.duration - 1:
         _mark_episode_finished(guid)
 
@@ -385,11 +407,14 @@ def _play_episode(ep: dict, latest: dict):
     if ep["guid"] == latest["guid"] and CACHED_FILE.exists():
         _play_local(CACHED_FILE, ep["published"], guid=ep["guid"])
         return
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3", dir=SCRIPT_DIR) as tmp:
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=".mp3", dir=SCRIPT_DIR
+    ) as tmp:
         temp_path = Path(tmp.name)
     click.echo("Downloading bulletin for local seek …")
     _download(ep["url"], temp_path)
     _play_local(temp_path, ep["published"], delete_after=True, guid=ep["guid"])
+
 
 def _mark_episode_finished(guid: str):
     state = _load_state()
@@ -398,15 +423,20 @@ def _mark_episode_finished(guid: str):
     state["finished"] = finished
     _save_state(state)
 
+
 def _is_episode_finished(guid: str) -> bool:
     state = _load_state()
     return state.get("finished", {}).get(guid, False)
+
 
 def _ensure_latest_cached(latest: dict):
     state = _load_state()
     need = True
     if CACHED_FILE.exists() and state.get("latest_guid") == latest["guid"]:
-        if latest.get("duration") and abs((_duration(CACHED_FILE) or 0) - latest["duration"]) < 2:
+        if (
+            latest.get("duration")
+            and abs((_duration(CACHED_FILE) or 0) - latest["duration"]) < 2
+        ):
             need = False
     if need:
         click.echo("Downloading newest episode …")
@@ -417,14 +447,16 @@ def _ensure_latest_cached(latest: dict):
     else:
         click.echo("Using cached episode file.")
 
+
 # ---------------------------------------------------------------------------
 # Date parsing helpers
 # ---------------------------------------------------------------------------
 _DATE_PATTERNS = [
-    (re.compile(r"^(\d{1,2})-(\d{1,2})$"), "%d-%m"),          # DD-MM (current year)
+    (re.compile(r"^(\d{1,2})-(\d{1,2})$"), "%d-%m"),  # DD-MM (current year)
     (re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{2})$"), "%d-%m-%y"),  # DD-MM-YY
     (re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$"), "%Y-%m-%d"),  # YYYY-MM-DD
 ]
+
 
 def _parse_cli_date(text: str) -> Optional[_dt.date]:
     """Parse user‑supplied CLI date text into a `datetime.date` (UTC)."""
@@ -440,12 +472,17 @@ def _parse_cli_date(text: str) -> Optional[_dt.date]:
             return _dt.datetime.strptime(text, fmt).date()
     return None
 
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 @click.command(context_settings=dict(help_option_names=["-h", "--help"]))
-@click.option("--date", "date_text", type=str, help="DATE in DD‑MM, DD‑MM‑YY, or YYYY‑MM‑DD (UTC)")
-@click.option("--today", "today_flag", is_flag=True, help="Shortcut for today's date (UTC)")
+@click.option(
+    "--date", "date_text", type=str, help="DATE in DD‑MM, DD‑MM‑YY, or YYYY‑MM‑DD (UTC)"
+)
+@click.option(
+    "--today", "today_flag", is_flag=True, help="Shortcut for today's date (UTC)"
+)
 @click.option("--list", "list_only", is_flag=True, help="List catalogue and exit.")
 def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
     """Play the BBC 5‑minute bulletin (download once, seek everywhere)."""
@@ -461,7 +498,9 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
         table.add_column("Time", style="cyan")
         table.add_column("Title", style="magenta")
         for ep in state.get("episodes", []):
-            table.add_row(_format_published(ep['published'], with_date=True), ep['title'])
+            table.add_row(
+                _format_published(ep["published"], with_date=True), ep["title"]
+            )
         Console().print(table)
         return
 
@@ -471,42 +510,57 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
     elif date_text:
         target_date = _parse_cli_date(date_text)
         if target_date is None:
-            click.echo("Unrecognised date format", err=True);
+            click.echo("Unrecognised date format", err=True)
             sys.exit(1)
 
     if target_date is not None:
         bulletins = list(reversed(_list_for_date(state, target_date)))
         if not bulletins:
-            Console().print("[red]No bulletins stored for that date[/red]"); return
+            Console().print("[red]No bulletins stored for that date[/red]")
+            return
         if len(bulletins) == 1:
-            Console().print(f"Auto‑selecting {_format_published(bulletins[0]['published'])}")
+            Console().print(
+                f"Auto‑selecting {_format_published(bulletins[0]['published'])}"
+            )
             if bulletins[0]["url"] == latest["url"]:
                 _ensure_latest_cached(latest)
             _play_episode(bulletins[0], latest)
             return
-        table = Table(title=f"Bulletins for {target_date}", title_justify="left", show_header=True, header_style="bold")
+        table = Table(
+            title=f"Bulletins for {target_date}",
+            title_justify="left",
+            show_header=True,
+            header_style="bold",
+        )
         table.add_column("#", style="cyan")
         table.add_column("Time", style="green")
         for idx, ep in enumerate(bulletins, 1):
-            table.add_row(str(idx), _format_published(ep['published']))
+            table.add_row(str(idx), _format_published(ep["published"]))
         Console().print(table)
         while True:
             choice = Prompt.ask("Enter number or 'q' to quit", default="1")
-            if isinstance(choice, str) and choice.lower() == 'q':
-                Console().print("[yellow]Quitting selection.[/yellow]"); return
-            try: num_choice = int(choice)
-            except ValueError: Console().print("[red]Invalid selection[/red]"); continue
+            if isinstance(choice, str) and choice.lower() == "q":
+                Console().print("[yellow]Quitting selection.[/yellow]")
+                return
+            try:
+                num_choice = int(choice)
+            except ValueError:
+                Console().print("[red]Invalid selection[/red]")
+                continue
             if not 1 <= num_choice <= len(bulletins):
-                Console().print("[red]Invalid selection[/red]"); continue
+                Console().print("[red]Invalid selection[/red]")
+                continue
             selected_ep = bulletins[num_choice - 1]
             if selected_ep["url"] == latest["url"]:
                 _ensure_latest_cached(latest)
             _play_episode(selected_ep, latest)
             return
 
-    # --- New logic for finished episode check ---
     if _is_episode_finished(latest["guid"]):
-        ans = Prompt.ask("You have already finished listening to the latest available episode. Play again? (y/n)", default="n")
+        ans = Prompt.ask(
+            "You have already finished listening to the latest available episode. Play again? (y/n)",
+            default="n",
+        )
         if ans.strip().lower() != "y":
             click.echo("Exiting.")
             return
@@ -518,7 +572,10 @@ class TimeColumn(ProgressColumn):
     def render(self, task):
         elapsed = int(task.completed)
         total = int(task.total)
-        return Text.from_markup(f"[cyan]{elapsed//60:02}:{elapsed%60:02}[/cyan]/[magenta]{total//60:02}:{total%60:02}[/magenta]")
+        return Text.from_markup(
+            f"[cyan]{elapsed // 60:02}:{elapsed % 60:02}[/cyan]/[magenta]{total // 60:02}:{total % 60:02}[/magenta]"
+        )
+
 
 if __name__ == "__main__":
     cli()

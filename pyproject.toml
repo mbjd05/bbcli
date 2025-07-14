@@ -9,6 +9,7 @@ dependencies = [
     "feedparser>=6.0.11",
     "python-vlc>=3.0.21203",
     "requests>=2.32.4",
+    "ruff>=0.12.3",
     "sounddevice>=0.5.2",
     "textual>=4.0.0",
 ]
