@@ -55,7 +55,13 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    try:
+        with STATE_FILE.open("w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+    except PermissionError as e:
+        click.echo(f"Error writing state file: {e}", err=True)
 
 # ---------------------------------------------------------------------------
 # Feed interaction
