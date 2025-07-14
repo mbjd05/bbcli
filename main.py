@@ -36,8 +36,8 @@ FEED_URL = (
     "https://podcast.voice.api.bbci.co.uk/rss/audio/p002vsmz?api_key="
     "Wbek5zSqxz0Hk1blo5IBqbd9SCWIfNbT"
 )
-STATE_FILE = Path.home() / ".bvc5min_state.json"
 SCRIPT_DIR = Path(__file__).resolve().parent
+STATE_FILE = SCRIPT_DIR / ".bvc5min_state.json"
 CACHED_FILE = SCRIPT_DIR / "latest_episode.mp3"  # permanent cache (latest only)
 PCM_RATE = 48_000
 CHANNELS = 2
