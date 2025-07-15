@@ -414,7 +414,7 @@ def _play_local(
             pass
 
     if guid and player.position >= player.duration - 1:
-        _mark_episode_finished(guid)
+        _mark_episode_finished()
 
 
 def _play_episode(ep: dict, latest: dict):
@@ -431,15 +431,25 @@ def _play_episode(ep: dict, latest: dict):
     _play_local(temp_path, ep["published"], delete_after=True, guid=ep["guid"])
 
 
-def _mark_episode_finished(guid: str | None = None):
+def _mark_episode_finished() -> None:
     state = _load_state()
     state["finished"] = True
     _save_state(state)
 
 
-def _is_episode_finished(guid: str | None = None) -> bool:
+def _is_episode_finished() -> bool:
     state = _load_state()
     return bool(state.get("finished", False))
+
+def _confirm_replay_if_finished() -> bool:
+    if _is_episode_finished():
+        ans = Prompt.ask(
+            "You have already finished listening to the latest available episode. "
+            "Play again? (y/n)",
+            default="n",
+        )
+        return ans.strip().lower() == "y"
+    return True
 
 
 def _ensure_latest_cached(latest: dict) -> None:
@@ -541,12 +551,14 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
             Console().print("[red]No bulletins stored for that date[/red]")
             return
         if len(bulletins) == 1:
-            Console().print(
-                f"Auto‑selecting {_format_published(bulletins[0]['published'])}"
-            )
-            if bulletins[0]["guid"] == latest["guid"]:
+            ep = bulletins[0]
+            Console().print(f"Auto‑selecting {_format_published(ep['published'])}")
+            if ep["guid"] == latest["guid"]:
                 _ensure_latest_cached(latest)
-            _play_episode(bulletins[0], latest)
+                if not _confirm_replay_if_finished():
+                    click.echo("Exiting.")
+                    return
+            _play_episode(ep, latest)
             return
 
         table = Table(
@@ -577,18 +589,15 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
             selected_ep = bulletins[num_choice - 1]
             if selected_ep["guid"] == latest["guid"]:
                 _ensure_latest_cached(latest)
+                if not _confirm_replay_if_finished():
+                    click.echo("Exiting.")
+                    return
             _play_episode(selected_ep, latest)
             return
 
-    if _is_episode_finished(latest["guid"]):
-        ans = Prompt.ask(
-            "You have already finished listening to the latest available episode. "
-            "Play again? (y/n)",
-            default="n",
-        )
-        if ans.strip().lower() != "y":
-            click.echo("Exiting.")
-            return
+    if not _confirm_replay_if_finished():
+        click.echo("Exiting.")
+        return
 
     _play_local(CACHED_FILE, latest["published"], guid=latest["guid"])
 
