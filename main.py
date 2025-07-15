@@ -88,23 +88,6 @@ def _parse_duration(dur):
     return None
 
 
-def _resolve_url(url: str) -> str:
-    try:
-        resp = requests.get(
-            url,
-            headers={"Range": "bytes=0-0"},
-            stream=True,
-            allow_redirects=True,
-            timeout=30,
-        )
-        resolved = resp.url
-        resp.close()
-        return resolved
-    except Exception:
-        resp = requests.head(url, allow_redirects=True, timeout=30)
-        return resp.url
-
-
 def _parse_entry(entry) -> dict:
     title = entry.title
     url = entry.enclosures[0].href
