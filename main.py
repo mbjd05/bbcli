@@ -107,8 +107,7 @@ def _resolve_url(url: str) -> str:
 
 def _parse_entry(entry) -> dict:
     title = entry.title
-    orig_url = entry.enclosures[0].href
-    url = _resolve_url(orig_url)
+    url = entry.enclosures[0].href
     guid = getattr(entry, "id", getattr(entry, "guid", entry.link))
     if getattr(entry, "published_parsed", None):
         ts = _dt.datetime(*entry.published_parsed[:6], tzinfo=_dt.timezone.utc)
