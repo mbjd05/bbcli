@@ -441,6 +441,7 @@ def _is_episode_finished() -> bool:
     state = _load_state()
     return bool(state.get("finished", False))
 
+
 def _confirm_replay_if_finished() -> bool:
     if _is_episode_finished():
         ans = Prompt.ask(
