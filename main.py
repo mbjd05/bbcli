@@ -88,9 +88,15 @@ def _parse_duration(dur):
     return None
 
 
+def _resolve_url(url: str) -> str:
+    resp = requests.head(url, allow_redirects=True, timeout=30)
+    return resp.url
+
+
 def _parse_entry(entry) -> dict:
     title = entry.title
-    url = entry.enclosures[0].href
+    orig_url = entry.enclosures[0].href
+    url = _resolve_url(orig_url)
     guid = getattr(entry, "id", getattr(entry, "guid", entry.link))
     if getattr(entry, "published_parsed", None):
         ts = _dt.datetime(*entry.published_parsed[:6], tzinfo=_dt.timezone.utc)
@@ -155,7 +161,7 @@ def _duration(src: str | Path):
 
 
 # ---------------------------------------------------------------------------
-# Audio Player (unchanged)
+# Audio Player
 # ---------------------------------------------------------------------------
 
 
@@ -351,16 +357,19 @@ class Player:
 
 def _ensure_catalogue_has(latest: dict) -> dict:
     state = _load_state()
-    eps: List[dict] = state.get("episodes", [])
-    if not any(ep["url"] == latest["url"] for ep in eps):
-        eps.append(latest)
-        eps.sort(key=lambda e: e["published"])
-        state.update(
-            episodes=eps,
-            latest_guid=latest["guid"],
-            latest_published=latest["published"],
-        )
-        _save_state(state)
+    eps = state.get("episodes", [])
+    eps.append(latest)
+    uniq = {}
+    for ep in eps:
+        uniq[ep["guid"]] = ep
+    deduped = list(uniq.values())
+    deduped.sort(key=lambda e: e["published"])
+    prev_latest = state.get("latest_guid")
+    state["episodes"] = deduped
+    state["latest_guid"] = latest["guid"]
+    if prev_latest != latest["guid"]:
+        state["finished"] = False
+    _save_state(state)
     return state
 
 
@@ -422,33 +431,36 @@ def _play_episode(ep: dict, latest: dict):
     _play_local(temp_path, ep["published"], delete_after=True, guid=ep["guid"])
 
 
-def _mark_episode_finished(guid: str):
+def _mark_episode_finished(guid: str | None = None):
     state = _load_state()
-    finished = state.get("finished", {})
-    finished[guid] = True
-    state["finished"] = finished
+    state["finished"] = True
     _save_state(state)
 
 
-def _is_episode_finished(guid: str) -> bool:
+def _is_episode_finished(guid: str | None = None) -> bool:
     state = _load_state()
-    return state.get("finished", {}).get(guid, False)
+    return bool(state.get("finished", False))
 
 
-def _ensure_latest_cached(latest: dict):
+def _ensure_latest_cached(latest: dict) -> None:
+    """
+    Make sure *latest* is present in latest_episode.mp3.
+    A download occurs only if the cached GUID (file on disk) differs from *latest*.
+    """
     state = _load_state()
-    need = True
-    if CACHED_FILE.exists() and state.get("latest_guid") == latest["guid"]:
-        if (
-            latest.get("duration")
-            and abs((_duration(CACHED_FILE) or 0) - latest["duration"]) < 2
-        ):
-            need = False
-    if need:
+    cached_guid = state.get("cached_guid")  # GUID of the file on disk
+    need_download = True
+
+    if CACHED_FILE.exists() and cached_guid == latest["guid"]:
+        if latest.get("duration"):
+            cached_dur = _duration(CACHED_FILE) or 0
+            if abs(cached_dur - latest["duration"]) < 2:
+                need_download = False
+
+    if need_download:
         click.echo("Downloading newest episode …")
         _download(latest["url"], CACHED_FILE)
-        state["latest_guid"] = latest["guid"]
-        state["latest_published"] = latest["published"]
+        state["cached_guid"] = latest["guid"]  # update only after success
         _save_state(state)
     else:
         click.echo("Using cached episode file.")
@@ -495,12 +507,12 @@ def _parse_cli_date(text: str) -> Optional[_dt.date]:
 )
 @click.option("--list", "list_only", is_flag=True, help="List catalogue and exit.")
 def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
-    """Play the BBC 5‑minute bulletin (download once, seek everywhere)."""
     if date_text and today_flag:
         click.echo("--date and --today are mutually exclusive", err=True)
         sys.exit(1)
 
     latest = _fetch_latest_episode()
+    _ensure_latest_cached(latest)
     state = _ensure_catalogue_has(latest)
 
     if list_only:
@@ -532,10 +544,11 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
             Console().print(
                 f"Auto‑selecting {_format_published(bulletins[0]['published'])}"
             )
-            if bulletins[0]["url"] == latest["url"]:
+            if bulletins[0]["guid"] == latest["guid"]:
                 _ensure_latest_cached(latest)
             _play_episode(bulletins[0], latest)
             return
+
         table = Table(
             title=f"Bulletins for {target_date}",
             title_justify="left",
@@ -547,6 +560,7 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
         for idx, ep in enumerate(bulletins, 1):
             table.add_row(str(idx), _format_published(ep["published"]))
         Console().print(table)
+
         while True:
             choice = Prompt.ask("Enter number or 'q' to quit", default="1")
             if isinstance(choice, str) and choice.lower() == "q":
@@ -561,21 +575,27 @@ def cli(date_text: Optional[str], today_flag: bool, list_only: bool):
                 Console().print("[red]Invalid selection[/red]")
                 continue
             selected_ep = bulletins[num_choice - 1]
-            if selected_ep["url"] == latest["url"]:
+            if selected_ep["guid"] == latest["guid"]:
                 _ensure_latest_cached(latest)
             _play_episode(selected_ep, latest)
             return
 
     if _is_episode_finished(latest["guid"]):
         ans = Prompt.ask(
-            "You have already finished listening to the latest available episode. Play again? (y/n)",
+            "You have already finished listening to the latest available episode. "
+            "Play again? (y/n)",
             default="n",
         )
         if ans.strip().lower() != "y":
             click.echo("Exiting.")
             return
-    _ensure_latest_cached(latest)
+
     _play_local(CACHED_FILE, latest["published"], guid=latest["guid"])
+
+
+# ---------------------------------------------------------------------------
+# Progress helper column
+# ---------------------------------------------------------------------------
 
 
 class TimeColumn(ProgressColumn):
@@ -583,7 +603,8 @@ class TimeColumn(ProgressColumn):
         elapsed = int(task.completed)
         total = int(task.total)
         return Text.from_markup(
-            f"[cyan]{elapsed // 60:02}:{elapsed % 60:02}[/cyan]/[magenta]{total // 60:02}:{total % 60:02}[/magenta]"
+            f"[cyan]{elapsed // 60:02}:{elapsed % 60:02}[/cyan]/"
+            f"[magenta]{total // 60:02}:{total % 60:02}[/magenta]"
         )
 
 
