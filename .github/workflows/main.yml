@@ -26,7 +26,7 @@ jobs:
           pip install nuitka
 
       - name: Compile CLI to Windows EXE
-        run: python -m nuitka --standalone --onefile --static-libpython=yes --output-filename=bbcli.exe main.py
+        run: python -m nuitka --standalone --onefile --output-filename=bbcli.exe main.py
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
