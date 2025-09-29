@@ -37,7 +37,10 @@ jobs:
         run: pip install nuitka
 
       - name: Compile CLI to Windows EXE
-        run: python -m nuitka --standalone --onefile --assume-yes-for-downloads --output-filename=bbcli.exe main.py
+        run: python -m nuitka --standalone --assume-yes-for-downloads --output-dir=build main.py
+
+      - name: Create zip archive of standalone build
+        run: Compress-Archive -Path build\main.dist\* -DestinationPath bbcli.zip
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -46,6 +49,6 @@ jobs:
           name: "Build ${{ github.run_number }}"
           draft: false
           prerelease: false
-          files: bbcli.exe
+          files: bbcli.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
