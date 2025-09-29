@@ -6,7 +6,7 @@ on:
 jobs:
   build:
     name: Build and Release Windows Executable
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     permissions:
       contents: write
     steps:
@@ -15,49 +15,20 @@ jobs:
         with:
           ref: main
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Cache APT packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            /var/cache/apt/archives
-            /var/lib/apt/lists
-          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/build-windows-exe.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-apt-
-
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
-      - name: Install Nuitka and ccache
+      - name: Install Nuitka
         run: |
           python -m pip install --upgrade pip
           pip install nuitka
-          sudo apt-get update
-          sudo apt-get install -y ccache
-          echo 'export PATH="/usr/lib/ccache:$PATH"' >> $GITHUB_ENV
-
-      - name: Install MinGW for cross-compilation
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mingw-w64
 
       - name: Compile CLI to Windows EXE
         run: |
-          python -m nuitka --standalone --onefile \
-            --mingw64 \
-            --static-libpython=yes \
-            --output-filename=bbcli.exe \
-            main.py
+          python -m nuitka --standalone --onefile --static-libpython=yes ^
+            --output-filename=bbcli.exe main.py
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
